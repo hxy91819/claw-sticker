@@ -1,11 +1,11 @@
 export const STICKERS = {
-  happy: "stickers/v2/happy.png",
-  love: "stickers/v2/love.png",
-  confused: "stickers/v2/confused.png",
-  sigh: "stickers/v2/sigh.png",
-  awkward: "stickers/v2/awkward.png",
-  nervous: "stickers/v2/nervous.png",
-  cool: "stickers/v2/cool.png",
+  happy: "stickers/happy.png",
+  love: "stickers/love.png",
+  confused: "stickers/confused.png",
+  sigh: "stickers/sigh.png",
+  awkward: "stickers/awkward.png",
+  nervous: "stickers/nervous.png",
+  cool: "stickers/cool.png",
 } as const;
 
 export type StickerName = keyof typeof STICKERS;
