@@ -1,0 +1,30 @@
+{
+  "name": "claw-sticker",
+  "version": "0.1.0",
+  "description": "OpenClaw sticker enhancer and WeCom MEDIA format guard.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "resources"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "openclaw": ">=2026.5.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "id": "claw-sticker",
+  "activation": {
+    "onStartup": true
+  },
+  "name": "Claw Sticker",
+  "description": "Adds conservative WeCom stickers and fixes MEDIA sticker format before delivery.",
+  "runtimeExtensions": ["./dist/index.js"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      },
+      "channels": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["wecom"]
+      },
+      "formatGuard": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
+      "autoAppend": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "dryRun": { "type": "boolean", "default": false },
+          "maxTextLength": { "type": "number", "default": 500 },
+          "cooldownMs": { "type": "number", "default": 900000 },
+          "minAssistantMessagesBetweenStickers": { "type": "number", "default": 4 }
+        }
+      }
+    }
+  }
+}

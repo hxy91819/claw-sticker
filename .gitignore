@@ -1,0 +1,46 @@
+# BMad local runtime
+_bmad/
+.agents/skills/bmad-*
+.factory/skills/bmad-*
+.codebuddy/skills/bmad-*
+.github/agents/bmad-*
+
+# Dependencies
+node_modules/
+
+# Build and test output
+dist/
+coverage/
+.nyc_output/
+
+# Package manager state
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+.pnpm-store/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and local overrides
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+.cache/
