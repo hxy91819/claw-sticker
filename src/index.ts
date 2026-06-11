@@ -1,9 +1,10 @@
-import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
+import { definePluginEntry, type OpenClawPluginApi, type OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { appendSticker, decideAutoAppend, type AutoAppendState } from "./auto-append.js";
 import { ensureStickerAssets, resolveRuntimeMediaBasePath } from "./assets.js";
 import { resolveConfig } from "./config.js";
 import { fixStickerFormat, splitStickerMediaFromContent } from "./format.js";
-import { resolveHostedStickerMediaUrl, resolveStickerDeliveryUrl } from "./stickers.js";
+import { renderSticker, resolveHostedStickerMediaUrl, resolveStickerDeliveryUrl } from "./stickers.js";
+import { consumePendingSticker, createSendStickerTool } from "./tool.js";
 
 const sessionState = new Map<string, AutoAppendState>();
 
@@ -13,6 +14,10 @@ type ClawStickerPluginEntry = {
   description: string;
   configSchema: unknown;
   register(api: OpenClawPluginApi): void;
+};
+
+type ToolCompatiblePluginApi = Omit<OpenClawPluginApi, "registerTool"> & {
+  registerTool?: OpenClawPluginApi["registerTool"];
 };
 
 type ReplyPayloadLike = {
@@ -33,6 +38,11 @@ function getState(key: string): AutoAppendState {
 
 function channelAllowed(channels: string[], channelId?: string): boolean {
   return Boolean(channelId && channels.includes(channelId));
+}
+
+function toolChannelAllowed(channels: string[], ctx: OpenClawPluginToolContext): boolean {
+  const channelId = ctx.deliveryContext?.channel ?? ctx.messageChannel;
+  return !channelId || channels.includes(channelId);
 }
 
 function normalizeStickerMediaUrls(mediaUrls: readonly string[] | undefined, mediaBasePath: string): string[] {
@@ -64,11 +74,13 @@ function normalizeStickerReplyPayload(params: {
   }
 
   const originalText = String(params.payload.text ?? "");
-  if (!originalText.trim()) {
+  const sessionKey = params.sessionKey ?? `${params.channelId ?? "unknown"}:unknown`;
+  const pendingSticker = consumePendingSticker(sessionKey);
+  if (!originalText.trim() && !pendingSticker) {
     return {};
   }
 
-  const state = getState(params.sessionKey ?? `${params.channelId ?? "unknown"}:unknown`);
+  const state = getState(sessionKey);
   let content = originalText;
   let reason: string | undefined;
 
@@ -91,6 +103,23 @@ function normalizeStickerReplyPayload(params: {
       payload: {
         ...params.payload,
         text: split.text || undefined,
+        mediaUrl: mediaUrls?.[0] ?? params.payload.mediaUrl,
+        mediaUrls,
+      },
+    };
+  }
+
+  if (pendingSticker) {
+    const pendingSplit = splitStickerMediaFromContent(renderSticker(pendingSticker.name));
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, pendingSplit.mediaUrls, mediaBasePath);
+    state.lastStickerAt = Date.now();
+    state.messagesSinceSticker = 0;
+    params.logger.info(`[claw-sticker] resolved tool sticker ${pendingSticker.name} to payload mediaUrls`);
+    return {
+      reason: "tool",
+      payload: {
+        ...params.payload,
+        text: content || undefined,
         mediaUrl: mediaUrls?.[0] ?? params.payload.mediaUrl,
         mediaUrls,
       },
@@ -142,8 +171,9 @@ function normalizeStickerReplyPayload(params: {
 const plugin: ClawStickerPluginEntry = definePluginEntry({
   id: "claw-sticker",
   name: "Claw Sticker",
-  description: "Adds conservative WeCom stickers and fixes MEDIA sticker format before delivery.",
+  description: "Adds an agentic send_sticker tool with self-contained WeCom sticker delivery.",
   register(api: OpenClawPluginApi) {
+    const compatibleApi = api as ToolCompatiblePluginApi;
     const resolveMediaBasePath = () =>
       resolveRuntimeMediaBasePath(resolveConfig(api.pluginConfig).mediaBasePath, { rootDir: api.rootDir });
 
@@ -152,6 +182,21 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
     void ensureStickerAssets(resolveMediaBasePath(), api.logger).catch((err: unknown) => {
       api.logger.warn(`[claw-sticker] failed to sync sticker assets: ${err instanceof Error ? err.message : String(err)}`);
     });
+
+    if (compatibleApi.registerTool) {
+      compatibleApi.registerTool(
+        (ctx) => {
+          const config = resolveConfig(api.pluginConfig);
+          if (!config.enabled || !config.tool.enabled || !toolChannelAllowed(config.channels, ctx)) {
+            return null;
+          }
+          return createSendStickerTool(ctx);
+        },
+        { name: "send_sticker", optional: true },
+      );
+    } else if (resolveConfig(api.pluginConfig).tool.enabled) {
+      api.logger.warn("[claw-sticker] send_sticker tool unavailable because this OpenClaw runtime does not expose registerTool");
+    }
 
     api.on(
       "reply_payload_sending",

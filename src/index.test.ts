@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import entry from "./index.js";
 import { normalizeStickerReplyPayload } from "./index.js";
+import { resetPendingStickersForTest } from "./tool.js";
 
 const testPluginRoot = "/tmp/openclaw-state/extensions/claw-sticker";
 const testStickerPath = "/tmp/openclaw-state/workspace/stickers/happy.png";
@@ -10,8 +11,22 @@ type Handler = (
   ctx: { channelId?: string; conversationId?: string; sessionKey?: string },
 ) => Promise<unknown>;
 
+type ToolFactory = (ctx: {
+  sessionKey?: string;
+  messageChannel?: string;
+  deliveryContext?: { channel?: string; to?: string; threadId?: string | number };
+}) => {
+  name: string;
+  execute(toolCallId: string, params: unknown): Promise<unknown>;
+} | null;
+
+afterEach(() => {
+  resetPendingStickersForTest();
+});
+
 function registerTestHandler(pluginConfig?: Record<string, unknown>) {
   let handler: Handler | undefined;
+  let toolFactory: ToolFactory | undefined;
   let hostedMediaResolver: ((mediaUrl: string) => string | null | undefined | Promise<string | null | undefined>) | undefined;
   const api = {
     rootDir: testPluginRoot,
@@ -19,6 +34,9 @@ function registerTestHandler(pluginConfig?: Record<string, unknown>) {
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     registerHostedMediaResolver: vi.fn((resolver: typeof hostedMediaResolver) => {
       hostedMediaResolver = resolver;
+    }),
+    registerTool: vi.fn((factory: ToolFactory) => {
+      toolFactory = factory;
     }),
     on: vi.fn((name: string, registered: Handler) => {
       if (name === "reply_payload_sending") {
@@ -30,14 +48,42 @@ function registerTestHandler(pluginConfig?: Record<string, unknown>) {
   if (!handler) {
     throw new Error("reply_payload_sending handler was not registered");
   }
-  return { handler, api, hostedMediaResolver };
+  if (!toolFactory) {
+    throw new Error("send_sticker tool factory was not registered");
+  }
+  return { handler, api, hostedMediaResolver, toolFactory };
 }
 
 describe("plugin entry", () => {
   it("registers a reply_payload_sending hook", () => {
     const { api } = registerTestHandler();
     expect(api.registerHostedMediaResolver).toHaveBeenCalledWith(expect.any(Function));
+    expect(api.registerTool).toHaveBeenCalledWith(expect.any(Function), {
+      name: "send_sticker",
+      optional: true,
+    });
     expect(api.on).toHaveBeenCalledWith("reply_payload_sending", expect.any(Function), {
+      priority: -50,
+      timeoutMs: 1000,
+    });
+  });
+
+  it("keeps the payload hook available on runtimes without registerTool", () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const on = vi.fn();
+    const api = {
+      rootDir: testPluginRoot,
+      pluginConfig: {},
+      logger,
+      registerHostedMediaResolver: vi.fn(),
+      on,
+    };
+
+    expect(() => entry.register(api as never)).not.toThrow();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[claw-sticker] send_sticker tool unavailable because this OpenClaw runtime does not expose registerTool",
+    );
+    expect(on).toHaveBeenCalledWith("reply_payload_sending", expect.any(Function), {
       priority: -50,
       timeoutMs: 1000,
     });
@@ -79,7 +125,7 @@ describe("plugin entry", () => {
   it("auto-appends conservatively when enabled", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
-      const { handler } = registerTestHandler();
+      const { handler } = registerTestHandler({ autoAppend: { enabled: true } });
       await expect(
         handler({ payload: { text: "已完成，测试通过了。" }, channel: "wecom", sessionKey: "room-2" }, { channelId: "wecom", conversationId: "room-2" }),
       ).resolves.toEqual({
@@ -92,6 +138,58 @@ describe("plugin entry", () => {
     } finally {
       random.mockRestore();
     }
+  });
+
+  it("does not auto-append by default because stickers are tool-driven", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const { handler } = registerTestHandler();
+      await expect(
+        handler({ payload: { text: "已完成，测试通过了。" }, channel: "wecom", sessionKey: "room-default-auto" }, { channelId: "wecom", conversationId: "room-default-auto" }),
+      ).resolves.toBeUndefined();
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("queues a sticker through the tool and attaches it during final reply delivery", async () => {
+    const { handler, toolFactory } = registerTestHandler();
+    const tool = toolFactory({ sessionKey: "room-tool", messageChannel: "wecom" });
+
+    await expect(tool?.execute("tool-1", { name: "happy", reason: "task_success" })).resolves.toEqual({
+      content: [{ type: "text", text: "Queued sticker: happy" }],
+      details: { queued: true, sticker: "happy", reason: "task_success" },
+    });
+    await expect(
+      handler({ payload: { text: "搞定了。" }, channel: "wecom", sessionKey: "room-tool" }, { channelId: "wecom", conversationId: "room-tool" }),
+    ).resolves.toEqual({
+      payload: {
+        text: "搞定了。",
+        mediaUrl: testStickerPath,
+        mediaUrls: [testStickerPath],
+      },
+    });
+  });
+
+  it("can deliver a queued sticker even when the final reply text is empty", async () => {
+    const { handler, toolFactory } = registerTestHandler();
+    const tool = toolFactory({ sessionKey: "room-tool-empty", messageChannel: "wecom" });
+
+    await tool?.execute("tool-1", { name: "cool" });
+    await expect(
+      handler({ payload: { text: "" }, channel: "wecom", sessionKey: "room-tool-empty" }, { channelId: "wecom", conversationId: "room-tool-empty" }),
+    ).resolves.toEqual({
+      payload: {
+        text: undefined,
+        mediaUrl: "/tmp/openclaw-state/workspace/stickers/cool.png",
+        mediaUrls: ["/tmp/openclaw-state/workspace/stickers/cool.png"],
+      },
+    });
+  });
+
+  it("does not expose the sticker tool for disallowed channels", () => {
+    const { toolFactory } = registerTestHandler();
+    expect(toolFactory({ sessionKey: "room-slack", messageChannel: "slack" })).toBeNull();
   });
 
   it("normalizes payloads directly for unit-level debugging", () => {

@@ -1,18 +1,21 @@
 # Claw Sticker
 
-OpenClaw plugin for conservative WeCom sticker delivery.
+OpenClaw plugin for conservative, self-contained WeCom sticker delivery.
 
-V1 keeps the model focused on normal replies. The plugin runs in `reply_payload_sending`, fixes known sticker syntax mistakes, resolves sticker directives into payload `mediaUrls`, then optionally appends one low-frequency sticker for obvious lightweight signals.
+The primary path is agentic: the assistant may call the `send_sticker` tool to queue one sticker for the current reply. The plugin then runs in `reply_payload_sending`, syncs packaged PNG assets, and resolves the queued sticker into payload `mediaUrls` for WeCom.
+
+Format guard support for `[sticker:name]` and `MEDIA:` remains as a compatibility fallback, not the preferred model-facing interface.
 
 ## Behavior
 
 - WeCom only by default: `channels: ["wecom"]`
-- Format guard fixes `📎`, Markdown image syntax, inline `MEDIA:`, leading spaces, absolute sticker paths, and `[sticker:name]`
-- Auto append supports:
+- Registers `send_sticker` for the assistant to queue `happy`, `love`, `confused`, `sigh`, `awkward`, `nervous`, or `cool`
+- Syncs packaged assets from `resources/` into `{workspaceDir}/stickers`
+- Format guard still fixes `📎`, Markdown image syntax, inline `MEDIA:`, leading spaces, absolute sticker paths, and `[sticker:name]`
+- Auto append is disabled by default; when enabled it supports:
   - success: `happy` / `love`
   - minor failure: `sigh` / `awkward`
   - uncertainty: `confused`
-- `cool` and `nervous` are packaged but not auto-triggered
 - serious, long, code-heavy, apology, incident, complaint, legal, medical, HR, and security contexts are blocked
 
 ## Local Verification
@@ -35,10 +38,10 @@ Build the plugin runtime:
 pnpm build
 ```
 
-Smoke test the built hook without starting Gateway:
+Smoke test the built tool-to-hook path without starting Gateway:
 
 ```bash
-node -e "Math.random=()=>0; import('./dist/index.js').then(async ({default: entry}) => { let h; const api={pluginConfig:{},logger:{info(){},warn(){},error(){},debug(){}},on(name,handler){ if(name==='reply_payload_sending') h=handler; }}; entry.register(api); console.log(await h({payload:{text:'已完成，测试通过了。'},channel:'wecom',sessionKey:'room'}, {channelId:'wecom',conversationId:'room'})); })"
+node -e "import('./dist/index.js').then(async ({default: entry}) => { let h, f; const api={rootDir:'/tmp/openclaw-state/extensions/claw-sticker',pluginConfig:{},logger:{info(){},warn(){},error(){},debug(){}},registerHostedMediaResolver(){},registerTool(factory){f=factory},on(name,handler){ if(name==='reply_payload_sending') h=handler; }}; entry.register(api); await f({sessionKey:'room',messageChannel:'wecom'}).execute('tool-1',{name:'happy'}); console.log(await h({payload:{text:'已完成。'},channel:'wecom',sessionKey:'room'}, {channelId:'wecom',conversationId:'room'})); })"
 ```
 
 Expected output contains:
@@ -62,8 +65,9 @@ mediaUrls: [ '<resolved OpenClaw state dir>/workspace/stickers/happy.png' ]
         "config": {
           "channels": ["wecom"],
           "mediaBasePath": "{workspaceDir}/stickers",
+          "tool": { "enabled": true },
           "formatGuard": { "enabled": true },
-          "autoAppend": { "enabled": true }
+          "autoAppend": { "enabled": false }
         }
       }
     },
@@ -75,10 +79,23 @@ mediaUrls: [ '<resolved OpenClaw state dir>/workspace/stickers/happy.png' ]
 If your `plugins.allow` is absent or empty, no allowlist change is needed. If it is restrictive, add `claw-sticker`.
 
 4. Restart Gateway or reload plugins according to your OpenClaw runtime.
-5. Send test replies through a WeCom-bound session:
+5. The normal path is tool-driven. The assistant should call:
+
+```json
+{
+  "name": "happy",
+  "reason": "task_success"
+}
+```
+
+with the `send_sticker` tool when a small sticker fits the final reply.
+
+For manual smoke testing, send this through a WeCom-bound session:
 
 ```text
-搞定了 MEDIA: stickers/happy.png
+请只回复下面内容，不要解释：
+
+[sticker:happy]
 ```
 
 Expected outbound content:
@@ -90,7 +107,7 @@ mediaUrls: ["<resolved OpenClaw state dir>/workspace/stickers/happy.png"]
 
 `mediaBasePath` is optional. By default, the plugin resolves `{workspaceDir}` from the active OpenClaw state directory, copies packaged PNG assets from `resources/` into `{workspaceDir}/stickers`, then sends those absolute local files through WeCom.
 
-For auto append, use a simple completion reply such as:
+For the optional auto-append fallback, explicitly enable it and use a simple completion reply such as:
 
 ```text
 已完成，测试通过了。

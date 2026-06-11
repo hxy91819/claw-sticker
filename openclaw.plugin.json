@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "Claw Sticker",
-  "description": "Adds conservative self-contained WeCom stickers and fixes MEDIA sticker format before delivery.",
+  "description": "Adds an agentic send_sticker tool with self-contained WeCom sticker delivery.",
   "runtimeExtensions": ["./dist/index.js"],
   "configSchema": {
     "type": "object",
@@ -23,6 +23,13 @@
         "type": "string",
         "default": "{workspaceDir}/stickers"
       },
+      "tool": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
       "formatGuard": {
         "type": "object",
         "additionalProperties": false,
@@ -34,7 +41,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean", "default": true },
+          "enabled": { "type": "boolean", "default": false },
           "dryRun": { "type": "boolean", "default": false },
           "maxTextLength": { "type": "number", "default": 500 },
           "cooldownMs": { "type": "number", "default": 900000 },
@@ -42,5 +49,8 @@
         }
       }
     }
+  },
+  "contracts": {
+    "tools": ["send_sticker"]
   }
 }
