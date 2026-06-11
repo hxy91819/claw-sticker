@@ -10,7 +10,8 @@ export type PendingSticker = {
   createdAt: number;
 };
 
-const pendingBySession = new Map<string, PendingSticker>();
+const MAX_PENDING_STICKERS_PER_SESSION = 8;
+const pendingBySession = new Map<string, PendingSticker[]>();
 
 const SendStickerParameters = {
   type: "object",
@@ -67,17 +68,22 @@ export function getToolSessionKey(ctx: Pick<OpenClawPluginToolContext, "sessionK
 
 export function putPendingSticker(sessionKey: string, sticker: Omit<PendingSticker, "createdAt">): PendingSticker {
   const pending = { ...sticker, createdAt: Date.now() };
-  pendingBySession.set(sessionKey, pending);
+  const existing = pendingBySession.get(sessionKey) ?? [];
+  pendingBySession.set(sessionKey, [...existing, pending].slice(-MAX_PENDING_STICKERS_PER_SESSION));
+  return pending;
+}
+
+export function consumePendingStickers(sessionKey?: string): PendingSticker[] {
+  if (!sessionKey) {
+    return [];
+  }
+  const pending = pendingBySession.get(sessionKey) ?? [];
+  pendingBySession.delete(sessionKey);
   return pending;
 }
 
 export function consumePendingSticker(sessionKey?: string): PendingSticker | undefined {
-  if (!sessionKey) {
-    return undefined;
-  }
-  const pending = pendingBySession.get(sessionKey);
-  pendingBySession.delete(sessionKey);
-  return pending;
+  return consumePendingStickers(sessionKey)[0];
 }
 
 export function createSendStickerTool(ctx: OpenClawPluginToolContext): AnyAgentTool | null {

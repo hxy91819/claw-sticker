@@ -171,6 +171,35 @@ describe("plugin entry", () => {
     });
   });
 
+  it("queues multiple stickers through the tool and attaches them to the next reply", async () => {
+    const { handler, toolFactory } = registerTestHandler();
+    const tool = toolFactory({ sessionKey: "room-tool-multi", messageChannel: "wecom" });
+
+    await tool?.execute("tool-1", { name: "happy" });
+    await tool?.execute("tool-2", { name: "cool" });
+    await tool?.execute("tool-3", { name: "love" });
+    await tool?.execute("tool-4", { name: "confused" });
+
+    await expect(
+      handler({ payload: { text: "都发一下。" }, channel: "wecom", sessionKey: "room-tool-multi" }, { channelId: "wecom", conversationId: "room-tool-multi" }),
+    ).resolves.toEqual({
+      payload: {
+        text: "都发一下。",
+        mediaUrl: testStickerPath,
+        mediaUrls: [
+          testStickerPath,
+          "/tmp/openclaw-state/workspace/stickers/cool.png",
+          "/tmp/openclaw-state/workspace/stickers/love.png",
+          "/tmp/openclaw-state/workspace/stickers/confused.png",
+        ],
+      },
+    });
+
+    await expect(
+      handler({ payload: { text: "下一条不重复。" }, channel: "wecom", sessionKey: "room-tool-multi" }, { channelId: "wecom", conversationId: "room-tool-multi" }),
+    ).resolves.toBeUndefined();
+  });
+
   it("can deliver a queued sticker even when the final reply text is empty", async () => {
     const { handler, toolFactory } = registerTestHandler();
     const tool = toolFactory({ sessionKey: "room-tool-empty", messageChannel: "wecom" });

@@ -4,7 +4,7 @@ import { ensureStickerAssets, resolveRuntimeMediaBasePath } from "./assets.js";
 import { resolveConfig } from "./config.js";
 import { fixStickerFormat, splitStickerMediaFromContent } from "./format.js";
 import { renderSticker, resolveHostedStickerMediaUrl, resolveStickerDeliveryUrl } from "./stickers.js";
-import { consumePendingSticker, createSendStickerTool } from "./tool.js";
+import { consumePendingStickers, createSendStickerTool, type PendingSticker } from "./tool.js";
 
 const sessionState = new Map<string, AutoAppendState>();
 
@@ -59,6 +59,10 @@ function mergeMediaUrls(existing: readonly string[] | undefined, next: readonly 
   return merged.length ? merged : undefined;
 }
 
+function renderPendingStickerMediaUrls(pendingStickers: readonly PendingSticker[]): string[] {
+  return pendingStickers.flatMap((sticker) => splitStickerMediaFromContent(renderSticker(sticker.name)).mediaUrls);
+}
+
 function normalizeStickerReplyPayload(params: {
   payload: ReplyPayloadLike;
   channelId?: string;
@@ -75,8 +79,8 @@ function normalizeStickerReplyPayload(params: {
 
   const originalText = String(params.payload.text ?? "");
   const sessionKey = params.sessionKey ?? `${params.channelId ?? "unknown"}:unknown`;
-  const pendingSticker = consumePendingSticker(sessionKey);
-  if (!originalText.trim() && !pendingSticker) {
+  const pendingStickers = consumePendingStickers(sessionKey);
+  if (!originalText.trim() && pendingStickers.length === 0) {
     return {};
   }
 
@@ -109,12 +113,13 @@ function normalizeStickerReplyPayload(params: {
     };
   }
 
-  if (pendingSticker) {
-    const pendingSplit = splitStickerMediaFromContent(renderSticker(pendingSticker.name));
-    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, pendingSplit.mediaUrls, mediaBasePath);
+  if (pendingStickers.length > 0) {
+    const pendingMediaUrls = renderPendingStickerMediaUrls(pendingStickers);
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, pendingMediaUrls, mediaBasePath);
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
-    params.logger.info(`[claw-sticker] resolved tool sticker ${pendingSticker.name} to payload mediaUrls`);
+    const stickerNames = pendingStickers.map((sticker) => sticker.name).join(",");
+    params.logger.info(`[claw-sticker] resolved tool stickers ${stickerNames} to payload mediaUrls`);
     return {
       reason: "tool",
       payload: {
