@@ -19,6 +19,10 @@
         "items": { "type": "string" },
         "default": ["wecom"]
       },
+      "mediaBasePath": {
+        "type": "string",
+        "default": "~/.openclaw/workspace/stickers"
+      },
       "formatGuard": {
         "type": "object",
         "additionalProperties": false,

@@ -9,6 +9,7 @@ describe("fixStickerFormat", () => {
     ["搞定。\n\n![开心](stickers/happy.png)", "搞定。\n\nMEDIA: stickers/happy.png"],
     ["搞定。 MEDIA: stickers/happy.png", "搞定。\nMEDIA: stickers/happy.png"],
     ["搞定。\n\n  MEDIA: stickers/happy.png", "搞定。\n\nMEDIA: stickers/happy.png"],
+    ["搞定。\n\nMEDIA: ~/.openclaw/workspace/stickers/happy.png", "搞定。\n\nMEDIA: stickers/happy.png"],
     ["搞定。\n\nMEDIA: /root/.openclaw/workspace/stickers/happy.png", "搞定。\n\nMEDIA: stickers/happy.png"],
     ["搞定。\n\nMEDIA: /root/.openclaw/workspace/stickers/v2/happy.png", "搞定。\n\nMEDIA: stickers/happy.png"],
     ["[sticker:happy]", "MEDIA: stickers/happy.png"],

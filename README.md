@@ -44,7 +44,7 @@ node -e "Math.random=()=>0; import('./dist/index.js').then(async ({default: entr
 Expected output contains:
 
 ```text
-mediaUrls: [ 'stickers/happy.png' ]
+mediaUrls: [ '~/.openclaw/workspace/stickers/happy.png' ]
 ```
 
 ## OpenClaw Validation
@@ -61,6 +61,7 @@ mediaUrls: [ 'stickers/happy.png' ]
         "enabled": true,
         "config": {
           "channels": ["wecom"],
+          "mediaBasePath": "~/.openclaw/workspace/stickers",
           "formatGuard": { "enabled": true },
           "autoAppend": { "enabled": true }
         }
@@ -84,7 +85,7 @@ Expected outbound content:
 
 ```text
 搞定了
-mediaUrls: ["stickers/happy.png"]
+mediaUrls: ["~/.openclaw/workspace/stickers/happy.png"]
 ```
 
 For auto append, use a simple completion reply such as:

@@ -17,7 +17,7 @@ type CodeFenceState = {
   inFence: boolean;
 };
 
-const STICKER_PATH_PATTERN = String.raw`(?:\/[^\s)]*)?stickers\/[^\s)]*?\.png`;
+const STICKER_PATH_PATTERN = String.raw`(?:[~/][^\s)]*?)?stickers\/[^\s)]*?\.png`;
 
 function isFenceToggle(line: string): boolean {
   return /^\s*(```|~~~)/.test(line);
@@ -32,9 +32,9 @@ function normalizeStickerPath(rawPath: string): { name: StickerName; mediaLine: 
 function lineContainsStickerIntent(line: string): boolean {
   return (
     /\[sticker:[a-z0-9_-]+\]/i.test(line) ||
-    /(?:^|\s)MEDIA:\s*(?:\/[^\s)]*)?stickers\/[^\s)]*?\.png/i.test(line) ||
-    /!\[[^\]]*]\((?:\/[^\s)]*)?stickers\/[^\s)]*?\.png\)/i.test(line) ||
-    /^\s*📎\s*(?:\/[^\s)]*)?stickers\/[^\s)]*?\.png/i.test(line)
+    /(?:^|\s)MEDIA:\s*(?:[~/][^\s)]*?)?stickers\/[^\s)]*?\.png/i.test(line) ||
+    /!\[[^\]]*]\((?:[~/][^\s)]*?)?stickers\/[^\s)]*?\.png\)/i.test(line) ||
+    /^\s*📎\s*(?:[~/][^\s)]*?)?stickers\/[^\s)]*?\.png/i.test(line)
   );
 }
 

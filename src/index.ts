@@ -2,6 +2,7 @@ import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/p
 import { appendSticker, decideAutoAppend, type AutoAppendState } from "./auto-append.js";
 import { resolveConfig } from "./config.js";
 import { fixStickerFormat, splitStickerMediaFromContent } from "./format.js";
+import { resolveHostedStickerMediaUrl, resolveStickerDeliveryUrl } from "./stickers.js";
 
 const sessionState = new Map<string, AutoAppendState>();
 
@@ -33,8 +34,17 @@ function channelAllowed(channels: string[], channelId?: string): boolean {
   return Boolean(channelId && channels.includes(channelId));
 }
 
-function mergeMediaUrls(existing: readonly string[] | undefined, next: readonly string[]): string[] | undefined {
-  const merged = Array.from(new Set([...(existing ?? []), ...next].filter((entry) => entry.trim())));
+function normalizeStickerMediaUrls(mediaUrls: readonly string[] | undefined, mediaBasePath: string): string[] {
+  return (mediaUrls ?? []).map((entry) => resolveStickerDeliveryUrl(entry, mediaBasePath));
+}
+
+function mergeMediaUrls(existing: readonly string[] | undefined, next: readonly string[], mediaBasePath: string): string[] | undefined {
+  const merged = Array.from(
+    new Set([
+      ...normalizeStickerMediaUrls(existing, mediaBasePath),
+      ...normalizeStickerMediaUrls(next, mediaBasePath),
+    ].filter((entry) => entry.trim())),
+  );
   return merged.length ? merged : undefined;
 }
 
@@ -71,7 +81,7 @@ function normalizeStickerReplyPayload(params: {
   if (split.mediaUrls.length > 0) {
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
-    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls);
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, config.mediaBasePath);
     params.logger.info("[claw-sticker] resolved sticker MEDIA to payload mediaUrls");
     return {
       reason: reason ?? "media_resolved",
@@ -94,7 +104,7 @@ function normalizeStickerReplyPayload(params: {
   if (decision.append) {
     content = appendSticker(content, decision.sticker);
     split = splitStickerMediaFromContent(content);
-    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls);
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, config.mediaBasePath);
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
     params.logger.info(`[claw-sticker] appended ${decision.sticker} (${decision.reason}) as payload mediaUrls`);
@@ -131,6 +141,10 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
   name: "Claw Sticker",
   description: "Adds conservative WeCom stickers and fixes MEDIA sticker format before delivery.",
   register(api: OpenClawPluginApi) {
+    api.registerHostedMediaResolver?.((mediaUrl) =>
+      resolveHostedStickerMediaUrl(mediaUrl, resolveConfig(api.pluginConfig).mediaBasePath),
+    );
+
     api.on(
       "reply_payload_sending",
       async (event, ctx) => {
