@@ -179,9 +179,11 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
 
     api.registerHostedMediaResolver?.((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, resolveMediaBasePath()));
 
-    void ensureStickerAssets(resolveMediaBasePath(), api.logger).catch((err: unknown) => {
-      api.logger.warn(`[claw-sticker] failed to sync sticker assets: ${err instanceof Error ? err.message : String(err)}`);
-    });
+    if (resolveConfig(api.pluginConfig).assetSync.enabled) {
+      void ensureStickerAssets(resolveMediaBasePath(), api.logger).catch((err: unknown) => {
+        api.logger.warn(`[claw-sticker] failed to sync sticker assets: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }
 
     if (compatibleApi.registerTool) {
       compatibleApi.registerTool(
@@ -210,7 +212,10 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
           mediaBasePath,
           logger: api.logger,
         });
-        if (result.payload?.mediaUrls?.some((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, mediaBasePath))) {
+        if (
+          resolveConfig(api.pluginConfig).assetSync.enabled &&
+          result.payload?.mediaUrls?.some((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, mediaBasePath))
+        ) {
           await ensureStickerAssets(mediaBasePath, api.logger);
         }
         return result.payload ? { payload: result.payload } : undefined;

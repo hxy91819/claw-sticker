@@ -4,6 +4,7 @@ export type ClawStickerConfig = {
   enabled: boolean;
   channels: string[];
   mediaBasePath: string;
+  assetSync: { enabled: boolean };
   tool: { enabled: boolean };
   formatGuard: { enabled: boolean };
   autoAppend: Partial<AutoAppendConfig>;
@@ -23,6 +24,7 @@ function stringValue(value: unknown, fallback: string): string {
 
 export function resolveConfig(raw: unknown): ClawStickerConfig {
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const assetSync = obj.assetSync && typeof obj.assetSync === "object" ? (obj.assetSync as Record<string, unknown>) : {};
   const tool = obj.tool && typeof obj.tool === "object" ? (obj.tool as Record<string, unknown>) : {};
   const formatGuard = obj.formatGuard && typeof obj.formatGuard === "object" ? (obj.formatGuard as Record<string, unknown>) : {};
   const autoAppend = obj.autoAppend && typeof obj.autoAppend === "object" ? (obj.autoAppend as Record<string, unknown>) : {};
@@ -30,6 +32,9 @@ export function resolveConfig(raw: unknown): ClawStickerConfig {
     enabled: booleanValue(obj.enabled, true),
     channels: Array.isArray(obj.channels) && obj.channels.every((entry) => typeof entry === "string") ? obj.channels : ["wecom"],
     mediaBasePath: stringValue(obj.mediaBasePath, "{workspaceDir}/stickers"),
+    assetSync: {
+      enabled: booleanValue(assetSync.enabled, true),
+    },
     tool: {
       enabled: booleanValue(tool.enabled, true),
     },

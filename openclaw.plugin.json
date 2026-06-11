@@ -23,6 +23,13 @@
         "type": "string",
         "default": "{workspaceDir}/stickers"
       },
+      "assetSync": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
       "tool": {
         "type": "object",
         "additionalProperties": false,

@@ -10,7 +10,7 @@ Format guard support for `[sticker:name]` and `MEDIA:` remains as a compatibilit
 
 - WeCom only by default: `channels: ["wecom"]`
 - Registers `send_sticker` for the assistant to queue `happy`, `love`, `confused`, `sigh`, `awkward`, `nervous`, or `cool`
-- Syncs packaged assets from `resources/` into `{workspaceDir}/stickers`
+- Syncs packaged assets from `resources/` into `{workspaceDir}/stickers` unless `assetSync.enabled` is disabled
 - Format guard still fixes `📎`, Markdown image syntax, inline `MEDIA:`, leading spaces, absolute sticker paths, and `[sticker:name]`
 - Auto append is disabled by default; when enabled it supports:
   - success: `happy` / `love`
@@ -65,6 +65,7 @@ mediaUrls: [ '<resolved OpenClaw state dir>/workspace/stickers/happy.png' ]
         "config": {
           "channels": ["wecom"],
           "mediaBasePath": "{workspaceDir}/stickers",
+          "assetSync": { "enabled": true },
           "tool": { "enabled": true },
           "formatGuard": { "enabled": true },
           "autoAppend": { "enabled": false }
@@ -106,6 +107,58 @@ mediaUrls: ["<resolved OpenClaw state dir>/workspace/stickers/happy.png"]
 ```
 
 `mediaBasePath` is optional. By default, the plugin resolves `{workspaceDir}` from the active OpenClaw state directory, copies packaged PNG assets from `resources/` into `{workspaceDir}/stickers`, then sends those absolute local files through WeCom.
+
+## Custom Stickers
+
+The tool currently exposes fixed semantic sticker names:
+
+```text
+happy, love, confused, sigh, awkward, nervous, cool
+```
+
+To customize the images without changing code, keep those file names and replace the PNG files in a directory you control.
+
+Recommended setup:
+
+1. Create a custom sticker directory under the OpenClaw state directory:
+
+```bash
+mkdir -p ~/.openclaw/custom-stickers
+```
+
+2. Put PNG files with these exact names in that directory:
+
+```text
+happy.png
+love.png
+confused.png
+sigh.png
+awkward.png
+nervous.png
+cool.png
+```
+
+3. Point the plugin to that directory and disable packaged asset sync:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "claw-sticker": {
+        "enabled": true,
+        "config": {
+          "mediaBasePath": "{stateDir}/custom-stickers",
+          "assetSync": { "enabled": false }
+        }
+      }
+    }
+  }
+}
+```
+
+Do not manually edit `{workspaceDir}/stickers` while `assetSync.enabled` is `true`; the plugin may copy packaged assets there again on startup. For WeCom, use normal PNG files, preferably square, transparent, and reasonably small.
+
+Adding new sticker names beyond the seven listed above requires a code change because the tool schema intentionally restricts the model to known names.
 
 For the optional auto-append fallback, explicitly enable it and use a simple completion reply such as:
 
