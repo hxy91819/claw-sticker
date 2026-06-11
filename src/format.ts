@@ -134,5 +134,5 @@ export function fixStickerFormat(content: string): FormatGuardResult {
 }
 
 export function contentHasSticker(content: string): boolean {
-  return content.split("\n").some((line) => /^MEDIA:\s*stickers\/v2\/[a-z0-9_-]+\.png\s*$/i.test(line.trim()));
+  return content.split("\n").some((line) => /^MEDIA:\s*stickers\/[a-z0-9_-]+\.png\s*$/i.test(line.trim()));
 }
