@@ -44,7 +44,7 @@ node -e "Math.random=()=>0; import('./dist/index.js').then(async ({default: entr
 Expected output contains:
 
 ```text
-mediaUrls: [ '~/.openclaw/workspace/stickers/happy.png' ]
+mediaUrls: [ '<resolved OpenClaw state dir>/workspace/stickers/happy.png' ]
 ```
 
 ## OpenClaw Validation
@@ -61,7 +61,7 @@ mediaUrls: [ '~/.openclaw/workspace/stickers/happy.png' ]
         "enabled": true,
         "config": {
           "channels": ["wecom"],
-          "mediaBasePath": "~/.openclaw/workspace/stickers",
+          "mediaBasePath": "{workspaceDir}/stickers",
           "formatGuard": { "enabled": true },
           "autoAppend": { "enabled": true }
         }
@@ -85,8 +85,10 @@ Expected outbound content:
 
 ```text
 搞定了
-mediaUrls: ["~/.openclaw/workspace/stickers/happy.png"]
+mediaUrls: ["<resolved OpenClaw state dir>/workspace/stickers/happy.png"]
 ```
+
+`mediaBasePath` is optional. By default, the plugin resolves `{workspaceDir}` from the active OpenClaw state directory, copies packaged PNG assets from `resources/` into `{workspaceDir}/stickers`, then sends those absolute local files through WeCom.
 
 For auto append, use a simple completion reply such as:
 

@@ -27,7 +27,7 @@ export function resolveConfig(raw: unknown): ClawStickerConfig {
   return {
     enabled: booleanValue(obj.enabled, true),
     channels: Array.isArray(obj.channels) && obj.channels.every((entry) => typeof entry === "string") ? obj.channels : ["wecom"],
-    mediaBasePath: stringValue(obj.mediaBasePath, "~/.openclaw/workspace/stickers"),
+    mediaBasePath: stringValue(obj.mediaBasePath, "{workspaceDir}/stickers"),
     formatGuard: {
       enabled: booleanValue(formatGuard.enabled, true),
     },

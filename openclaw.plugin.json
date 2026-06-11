@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "Claw Sticker",
-  "description": "Adds conservative WeCom stickers and fixes MEDIA sticker format before delivery.",
+  "description": "Adds conservative self-contained WeCom stickers and fixes MEDIA sticker format before delivery.",
   "runtimeExtensions": ["./dist/index.js"],
   "configSchema": {
     "type": "object",
@@ -21,7 +21,7 @@
       },
       "mediaBasePath": {
         "type": "string",
-        "default": "~/.openclaw/workspace/stickers"
+        "default": "{workspaceDir}/stickers"
       },
       "formatGuard": {
         "type": "object",

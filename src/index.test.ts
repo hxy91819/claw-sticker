@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import entry from "./index.js";
 import { normalizeStickerReplyPayload } from "./index.js";
 
+const testPluginRoot = "/tmp/openclaw-state/extensions/claw-sticker";
+const testStickerPath = "/tmp/openclaw-state/workspace/stickers/happy.png";
+
 type Handler = (
   event: { payload: { text?: string; mediaUrls?: string[] }; channel?: string; sessionKey?: string },
   ctx: { channelId?: string; conversationId?: string; sessionKey?: string },
@@ -11,6 +14,7 @@ function registerTestHandler(pluginConfig?: Record<string, unknown>) {
   let handler: Handler | undefined;
   let hostedMediaResolver: ((mediaUrl: string) => string | null | undefined | Promise<string | null | undefined>) | undefined;
   const api = {
+    rootDir: testPluginRoot,
     pluginConfig,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     registerHostedMediaResolver: vi.fn((resolver: typeof hostedMediaResolver) => {
@@ -35,7 +39,7 @@ describe("plugin entry", () => {
     expect(api.registerHostedMediaResolver).toHaveBeenCalledWith(expect.any(Function));
     expect(api.on).toHaveBeenCalledWith("reply_payload_sending", expect.any(Function), {
       priority: -50,
-      timeoutMs: 100,
+      timeoutMs: 1000,
     });
   });
 
@@ -46,8 +50,8 @@ describe("plugin entry", () => {
     ).resolves.toEqual({
       payload: {
         text: undefined,
-        mediaUrl: "~/.openclaw/workspace/stickers/happy.png",
-        mediaUrls: ["~/.openclaw/workspace/stickers/happy.png"],
+        mediaUrl: testStickerPath,
+        mediaUrls: [testStickerPath],
       },
     });
   });
@@ -59,8 +63,8 @@ describe("plugin entry", () => {
     ).resolves.toEqual({
       payload: {
         text: "搞定了",
-        mediaUrl: "~/.openclaw/workspace/stickers/happy.png",
-        mediaUrls: ["~/.openclaw/workspace/stickers/happy.png"],
+        mediaUrl: testStickerPath,
+        mediaUrls: [testStickerPath],
       },
     });
   });
@@ -81,8 +85,8 @@ describe("plugin entry", () => {
       ).resolves.toEqual({
         payload: {
           text: "已完成，测试通过了。",
-          mediaUrl: "~/.openclaw/workspace/stickers/happy.png",
-          mediaUrls: ["~/.openclaw/workspace/stickers/happy.png"],
+          mediaUrl: testStickerPath,
+          mediaUrls: [testStickerPath],
         },
       });
     } finally {
@@ -98,14 +102,15 @@ describe("plugin entry", () => {
         channelId: "wecom",
         sessionKey: "debug-room",
         pluginConfig: { autoAppend: { enabled: false } },
+        mediaBasePath: "/tmp/openclaw-state/workspace/stickers",
         logger,
       }),
     ).toEqual({
       reason: "format_guard",
       payload: {
         text: undefined,
-        mediaUrl: "~/.openclaw/workspace/stickers/happy.png",
-        mediaUrls: ["~/.openclaw/workspace/stickers/happy.png"],
+        mediaUrl: testStickerPath,
+        mediaUrls: [testStickerPath],
       },
     });
   });
@@ -139,6 +144,7 @@ describe("plugin entry", () => {
         channelId: "wecom",
         sessionKey: "existing-media-room",
         pluginConfig: { autoAppend: { enabled: false } },
+        mediaBasePath: "/tmp/openclaw-state/workspace/stickers",
         logger,
       }),
     ).toEqual({
@@ -148,7 +154,7 @@ describe("plugin entry", () => {
         mediaUrl: "https://example.com/happy.png",
         mediaUrls: [
           "https://example.com/happy.png",
-          "~/.openclaw/workspace/stickers/happy.png",
+          testStickerPath,
         ],
       },
     });

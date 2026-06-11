@@ -1,5 +1,6 @@
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { appendSticker, decideAutoAppend, type AutoAppendState } from "./auto-append.js";
+import { ensureStickerAssets, resolveRuntimeMediaBasePath } from "./assets.js";
 import { resolveConfig } from "./config.js";
 import { fixStickerFormat, splitStickerMediaFromContent } from "./format.js";
 import { resolveHostedStickerMediaUrl, resolveStickerDeliveryUrl } from "./stickers.js";
@@ -53,9 +54,11 @@ function normalizeStickerReplyPayload(params: {
   channelId?: string;
   sessionKey?: string;
   pluginConfig: unknown;
+  mediaBasePath?: string;
   logger: OpenClawPluginApi["logger"];
 }): { payload?: ReplyPayloadLike; reason?: string } {
   const config = resolveConfig(params.pluginConfig);
+  const mediaBasePath = params.mediaBasePath ?? resolveRuntimeMediaBasePath(config.mediaBasePath);
   if (!config.enabled || !channelAllowed(config.channels, params.channelId)) {
     return {};
   }
@@ -81,7 +84,7 @@ function normalizeStickerReplyPayload(params: {
   if (split.mediaUrls.length > 0) {
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
-    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, config.mediaBasePath);
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, mediaBasePath);
     params.logger.info("[claw-sticker] resolved sticker MEDIA to payload mediaUrls");
     return {
       reason: reason ?? "media_resolved",
@@ -104,7 +107,7 @@ function normalizeStickerReplyPayload(params: {
   if (decision.append) {
     content = appendSticker(content, decision.sticker);
     split = splitStickerMediaFromContent(content);
-    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, config.mediaBasePath);
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, mediaBasePath);
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
     params.logger.info(`[claw-sticker] appended ${decision.sticker} (${decision.reason}) as payload mediaUrls`);
@@ -141,27 +144,37 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
   name: "Claw Sticker",
   description: "Adds conservative WeCom stickers and fixes MEDIA sticker format before delivery.",
   register(api: OpenClawPluginApi) {
-    api.registerHostedMediaResolver?.((mediaUrl) =>
-      resolveHostedStickerMediaUrl(mediaUrl, resolveConfig(api.pluginConfig).mediaBasePath),
-    );
+    const resolveMediaBasePath = () =>
+      resolveRuntimeMediaBasePath(resolveConfig(api.pluginConfig).mediaBasePath, { rootDir: api.rootDir });
+
+    api.registerHostedMediaResolver?.((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, resolveMediaBasePath()));
+
+    void ensureStickerAssets(resolveMediaBasePath(), api.logger).catch((err: unknown) => {
+      api.logger.warn(`[claw-sticker] failed to sync sticker assets: ${err instanceof Error ? err.message : String(err)}`);
+    });
 
     api.on(
       "reply_payload_sending",
       async (event, ctx) => {
+        const mediaBasePath = resolveMediaBasePath();
         const result = normalizeStickerReplyPayload({
           payload: event.payload,
           channelId: event.channel ?? ctx.channelId,
           sessionKey: getSessionKey(ctx, event),
           pluginConfig: api.pluginConfig,
+          mediaBasePath,
           logger: api.logger,
         });
+        if (result.payload?.mediaUrls?.some((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, mediaBasePath))) {
+          await ensureStickerAssets(mediaBasePath, api.logger);
+        }
         return result.payload ? { payload: result.payload } : undefined;
       },
-      { priority: -50, timeoutMs: 100 },
+      { priority: -50, timeoutMs: 1000 },
     );
   },
 });
 
 export default plugin;
 
-export { appendSticker, decideAutoAppend, fixStickerFormat, normalizeStickerReplyPayload };
+export { appendSticker, decideAutoAppend, ensureStickerAssets, fixStickerFormat, normalizeStickerReplyPayload };
