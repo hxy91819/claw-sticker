@@ -7,6 +7,12 @@ export type FormatGuardResult = {
   reasons: string[];
 };
 
+export type StickerMediaSplitResult = {
+  text: string;
+  mediaUrls: string[];
+  changed: boolean;
+};
+
 type CodeFenceState = {
   inFence: boolean;
 };
@@ -135,4 +141,31 @@ export function fixStickerFormat(content: string): FormatGuardResult {
 
 export function contentHasSticker(content: string): boolean {
   return content.split("\n").some((line) => /^MEDIA:\s*stickers\/[a-z0-9_-]+\.png\s*$/i.test(line.trim()));
+}
+
+export function splitStickerMediaFromContent(content: string): StickerMediaSplitResult {
+  const textLines: string[] = [];
+  const mediaUrls: string[] = [];
+  let changed = false;
+
+  for (const line of content.split("\n")) {
+    const match = line.trim().match(/^MEDIA:\s*(stickers\/[a-z0-9_-]+\.png)\s*$/i);
+    if (!match?.[1]) {
+      textLines.push(line);
+      continue;
+    }
+    const normalized = normalizeStickerPath(match[1]);
+    if (!normalized) {
+      textLines.push(line);
+      continue;
+    }
+    mediaUrls.push(normalized.mediaLine.replace(/^MEDIA:\s*/i, ""));
+    changed = true;
+  }
+
+  return {
+    text: textLines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    mediaUrls,
+    changed,
+  };
 }

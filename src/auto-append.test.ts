@@ -62,6 +62,6 @@ describe("decideAutoAppend", () => {
   });
 
   it("renders a WeCom MEDIA line at the end", () => {
-    expect(appendSticker("已完成。", "happy")).toBe("已完成。\n\nMEDIA: stickers/v2/happy.png");
+    expect(appendSticker("已完成。", "happy")).toBe("已完成。\n\nMEDIA: stickers/happy.png");
   });
 });

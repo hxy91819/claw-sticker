@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import entry from "./index.js";
+import { normalizeStickerReplyPayload } from "./index.js";
 
-type Handler = (event: { content?: string; to?: string }, ctx: { channelId?: string; conversationId?: string; sessionKey?: string }) => Promise<unknown>;
+type Handler = (
+  event: { payload: { text?: string; mediaUrls?: string[] }; channel?: string; sessionKey?: string },
+  ctx: { channelId?: string; conversationId?: string; sessionKey?: string },
+) => Promise<unknown>;
 
 function registerTestHandler(pluginConfig?: Record<string, unknown>) {
   let handler: Handler | undefined;
@@ -9,38 +13,57 @@ function registerTestHandler(pluginConfig?: Record<string, unknown>) {
     pluginConfig,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     on: vi.fn((name: string, registered: Handler) => {
-      if (name === "message_sending") {
+      if (name === "reply_payload_sending") {
         handler = registered;
       }
     }),
   };
   entry.register(api as never);
   if (!handler) {
-    throw new Error("message_sending handler was not registered");
+    throw new Error("reply_payload_sending handler was not registered");
   }
   return { handler, api };
 }
 
 describe("plugin entry", () => {
-  it("registers a message_sending hook", () => {
+  it("registers a reply_payload_sending hook", () => {
     const { api } = registerTestHandler();
-    expect(api.on).toHaveBeenCalledWith("message_sending", expect.any(Function), {
+    expect(api.on).toHaveBeenCalledWith("reply_payload_sending", expect.any(Function), {
       priority: -50,
       timeoutMs: 100,
     });
   });
 
-  it("fixes sticker syntax on wecom", async () => {
+  it("resolves sticker marker into payload mediaUrls on wecom", async () => {
     const { handler } = registerTestHandler({ autoAppend: { enabled: false } });
     await expect(
-      handler({ content: "搞定了 MEDIA: stickers/v2/happy.png", to: "room-1" }, { channelId: "wecom", conversationId: "room-1" }),
-    ).resolves.toEqual({ content: "搞定了\nMEDIA: stickers/v2/happy.png" });
+      handler({ payload: { text: "[sticker:happy]" }, channel: "wecom", sessionKey: "room-1" }, { channelId: "wecom", conversationId: "room-1" }),
+    ).resolves.toEqual({
+      payload: {
+        text: undefined,
+        mediaUrl: "stickers/happy.png",
+        mediaUrls: ["stickers/happy.png"],
+      },
+    });
+  });
+
+  it("fixes inline sticker syntax and strips MEDIA text from visible payload", async () => {
+    const { handler } = registerTestHandler({ autoAppend: { enabled: false } });
+    await expect(
+      handler({ payload: { text: "搞定了 MEDIA: stickers/happy.png" }, channel: "wecom", sessionKey: "room-inline" }, { channelId: "wecom", conversationId: "room-inline" }),
+    ).resolves.toEqual({
+      payload: {
+        text: "搞定了",
+        mediaUrl: "stickers/happy.png",
+        mediaUrls: ["stickers/happy.png"],
+      },
+    });
   });
 
   it("does not run on other channels", async () => {
     const { handler } = registerTestHandler();
     await expect(
-      handler({ content: "已完成，测试通过了。", to: "room-1" }, { channelId: "slack", conversationId: "room-1" }),
+      handler({ payload: { text: "已完成，测试通过了。" }, channel: "slack", sessionKey: "room-1" }, { channelId: "slack", conversationId: "room-1" }),
     ).resolves.toBeUndefined();
   });
 
@@ -49,10 +72,36 @@ describe("plugin entry", () => {
     try {
       const { handler } = registerTestHandler();
       await expect(
-        handler({ content: "已完成，测试通过了。", to: "room-2" }, { channelId: "wecom", conversationId: "room-2" }),
-      ).resolves.toEqual({ content: expect.stringContaining("MEDIA: stickers/v2/") });
+        handler({ payload: { text: "已完成，测试通过了。" }, channel: "wecom", sessionKey: "room-2" }, { channelId: "wecom", conversationId: "room-2" }),
+      ).resolves.toEqual({
+        payload: {
+          text: "已完成，测试通过了。",
+          mediaUrl: "stickers/happy.png",
+          mediaUrls: ["stickers/happy.png"],
+        },
+      });
     } finally {
       random.mockRestore();
     }
+  });
+
+  it("normalizes payloads directly for unit-level debugging", () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    expect(
+      normalizeStickerReplyPayload({
+        payload: { text: "[sticker:happy]" },
+        channelId: "wecom",
+        sessionKey: "debug-room",
+        pluginConfig: { autoAppend: { enabled: false } },
+        logger,
+      }),
+    ).toEqual({
+      reason: "format_guard",
+      payload: {
+        text: undefined,
+        mediaUrl: "stickers/happy.png",
+        mediaUrls: ["stickers/happy.png"],
+      },
+    });
   });
 });

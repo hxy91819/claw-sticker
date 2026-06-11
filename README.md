@@ -2,7 +2,7 @@
 
 OpenClaw plugin for conservative WeCom sticker delivery.
 
-V1 keeps the model focused on normal replies. The plugin runs in `message_sending`, fixes known sticker syntax mistakes, then optionally appends one low-frequency sticker for obvious lightweight signals.
+V1 keeps the model focused on normal replies. The plugin runs in `reply_payload_sending`, fixes known sticker syntax mistakes, resolves sticker directives into payload `mediaUrls`, then optionally appends one low-frequency sticker for obvious lightweight signals.
 
 ## Behavior
 
@@ -38,13 +38,13 @@ pnpm build
 Smoke test the built hook without starting Gateway:
 
 ```bash
-node -e "Math.random=()=>0; import('./dist/index.js').then(async ({default: entry}) => { let h; const api={pluginConfig:{},logger:{info(){},warn(){},error(){},debug(){}},on(name,handler){ if(name==='message_sending') h=handler; }}; entry.register(api); console.log(await h({content:'已完成，测试通过了。',to:'room'}, {channelId:'wecom',conversationId:'room'})); })"
+node -e "Math.random=()=>0; import('./dist/index.js').then(async ({default: entry}) => { let h; const api={pluginConfig:{},logger:{info(){},warn(){},error(){},debug(){}},on(name,handler){ if(name==='reply_payload_sending') h=handler; }}; entry.register(api); console.log(await h({payload:{text:'已完成，测试通过了。'},channel:'wecom',sessionKey:'room'}, {channelId:'wecom',conversationId:'room'})); })"
 ```
 
 Expected output contains:
 
 ```text
-MEDIA: stickers/v2/happy.png
+mediaUrls: [ 'stickers/happy.png' ]
 ```
 
 ## OpenClaw Validation
@@ -77,14 +77,14 @@ If your `plugins.allow` is absent or empty, no allowlist change is needed. If it
 5. Send test replies through a WeCom-bound session:
 
 ```text
-搞定了 MEDIA: stickers/v2/happy.png
+搞定了 MEDIA: stickers/happy.png
 ```
 
 Expected outbound content:
 
 ```text
 搞定了
-MEDIA: stickers/v2/happy.png
+mediaUrls: ["stickers/happy.png"]
 ```
 
 For auto append, use a simple completion reply such as:

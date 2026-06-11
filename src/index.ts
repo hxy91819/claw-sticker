@@ -1,7 +1,7 @@
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { appendSticker, decideAutoAppend, type AutoAppendState } from "./auto-append.js";
 import { resolveConfig } from "./config.js";
-import { contentHasSticker, fixStickerFormat } from "./format.js";
+import { fixStickerFormat, splitStickerMediaFromContent } from "./format.js";
 
 const sessionState = new Map<string, AutoAppendState>();
 
@@ -13,8 +13,14 @@ type ClawStickerPluginEntry = {
   register(api: OpenClawPluginApi): void;
 };
 
-function getSessionKey(ctx: { sessionKey?: string; channelId?: string; conversationId?: string }, event: { to?: string }): string {
-  return ctx.sessionKey ?? `${ctx.channelId ?? "unknown"}:${ctx.conversationId ?? event.to ?? "unknown"}`;
+type ReplyPayloadLike = {
+  text?: string;
+  mediaUrl?: string;
+  mediaUrls?: string[];
+};
+
+function getSessionKey(ctx: { sessionKey?: string; channelId?: string; conversationId?: string }, event: { sessionKey?: string; to?: string }): string {
+  return event.sessionKey ?? ctx.sessionKey ?? `${ctx.channelId ?? "unknown"}:${ctx.conversationId ?? event.to ?? "unknown"}`;
 }
 
 function getState(key: string): AutoAppendState {
@@ -27,62 +33,115 @@ function channelAllowed(channels: string[], channelId?: string): boolean {
   return Boolean(channelId && channels.includes(channelId));
 }
 
+function mergeMediaUrls(existing: readonly string[] | undefined, next: readonly string[]): string[] | undefined {
+  const merged = Array.from(new Set([...(existing ?? []), ...next].filter((entry) => entry.trim())));
+  return merged.length ? merged : undefined;
+}
+
+function normalizeStickerReplyPayload(params: {
+  payload: ReplyPayloadLike;
+  channelId?: string;
+  sessionKey?: string;
+  pluginConfig: unknown;
+  logger: OpenClawPluginApi["logger"];
+}): { payload?: ReplyPayloadLike; reason?: string } {
+  const config = resolveConfig(params.pluginConfig);
+  if (!config.enabled || !channelAllowed(config.channels, params.channelId)) {
+    return {};
+  }
+
+  const originalText = String(params.payload.text ?? "");
+  if (!originalText.trim()) {
+    return {};
+  }
+
+  const state = getState(params.sessionKey ?? `${params.channelId ?? "unknown"}:unknown`);
+  let content = originalText;
+  let reason: string | undefined;
+
+  if (config.formatGuard.enabled) {
+    const fixed = fixStickerFormat(content);
+    content = fixed.content;
+    if (fixed.changed) {
+      reason = "format_guard";
+    }
+  }
+
+  let split = splitStickerMediaFromContent(content);
+  if (split.mediaUrls.length > 0) {
+    state.lastStickerAt = Date.now();
+    state.messagesSinceSticker = 0;
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls);
+    params.logger.info("[claw-sticker] resolved sticker MEDIA to payload mediaUrls");
+    return {
+      reason: reason ?? "media_resolved",
+      payload: {
+        ...params.payload,
+        text: split.text || undefined,
+        mediaUrl: mediaUrls?.[0] ?? params.payload.mediaUrl,
+        mediaUrls,
+      },
+    };
+  }
+
+  state.messagesSinceSticker += 1;
+  const decision = decideAutoAppend({
+    content,
+    config: config.autoAppend,
+    state,
+  });
+
+  if (decision.append) {
+    content = appendSticker(content, decision.sticker);
+    split = splitStickerMediaFromContent(content);
+    const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls);
+    state.lastStickerAt = Date.now();
+    state.messagesSinceSticker = 0;
+    params.logger.info(`[claw-sticker] appended ${decision.sticker} (${decision.reason}) as payload mediaUrls`);
+    return {
+      reason: "auto_append",
+      payload: {
+        ...params.payload,
+        text: split.text || undefined,
+        mediaUrl: mediaUrls?.[0] ?? params.payload.mediaUrl,
+        mediaUrls,
+      },
+    };
+  }
+
+  if (decision.reason === "dry_run") {
+    params.logger.info(`[claw-sticker] dry-run would append ${decision.sticker ?? "unknown"} (${decision.signal ?? "unknown"})`);
+  }
+
+  if (content !== originalText) {
+    return {
+      reason: reason ?? "format_guard",
+      payload: {
+        ...params.payload,
+        text: content || undefined,
+      },
+    };
+  }
+
+  return {};
+}
+
 const plugin: ClawStickerPluginEntry = definePluginEntry({
   id: "claw-sticker",
   name: "Claw Sticker",
   description: "Adds conservative WeCom stickers and fixes MEDIA sticker format before delivery.",
   register(api: OpenClawPluginApi) {
     api.on(
-      "message_sending",
+      "reply_payload_sending",
       async (event, ctx) => {
-        const config = resolveConfig(api.pluginConfig);
-        if (!config.enabled || !channelAllowed(config.channels, ctx.channelId)) {
-          return undefined;
-        }
-
-        const original = String(event.content ?? "");
-        if (!original.trim()) {
-          return undefined;
-        }
-
-        let content = original;
-        const key = getSessionKey(ctx, event);
-        const state = getState(key);
-
-        if (config.formatGuard.enabled) {
-          const fixed = fixStickerFormat(content);
-          content = fixed.content;
-          if (fixed.hasSticker || contentHasSticker(content)) {
-            state.lastStickerAt = Date.now();
-            state.messagesSinceSticker = 0;
-            if (fixed.changed) {
-              api.logger.info("[claw-sticker] format guard fixed sticker syntax");
-              return { content };
-            }
-            return undefined;
-          }
-        }
-
-        state.messagesSinceSticker += 1;
-        const decision = decideAutoAppend({
-          content,
-          config: config.autoAppend,
-          state,
+        const result = normalizeStickerReplyPayload({
+          payload: event.payload,
+          channelId: event.channel ?? ctx.channelId,
+          sessionKey: getSessionKey(ctx, event),
+          pluginConfig: api.pluginConfig,
+          logger: api.logger,
         });
-
-        if (decision.append) {
-          const next = appendSticker(content, decision.sticker);
-          state.lastStickerAt = Date.now();
-          state.messagesSinceSticker = 0;
-          api.logger.info(`[claw-sticker] appended ${decision.sticker} (${decision.reason})`);
-          return { content: next };
-        }
-
-        if (decision.reason === "dry_run") {
-          api.logger.info(`[claw-sticker] dry-run would append ${decision.sticker ?? "unknown"} (${decision.signal ?? "unknown"})`);
-        }
-
-        return content !== original ? { content } : undefined;
+        return result.payload ? { payload: result.payload } : undefined;
       },
       { priority: -50, timeoutMs: 100 },
     );
@@ -91,4 +150,4 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
 
 export default plugin;
 
-export { appendSticker, decideAutoAppend, fixStickerFormat };
+export { appendSticker, decideAutoAppend, fixStickerFormat, normalizeStickerReplyPayload };
