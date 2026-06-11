@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
   "files": [
     "dist",
     "openclaw.plugin.json",
@@ -20,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@types/ws": "^8.18.1",
     "openclaw": ">=2026.5.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
