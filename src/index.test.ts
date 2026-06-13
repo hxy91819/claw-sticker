@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import entry from "./index.js";
 import { normalizeStickerReplyPayload } from "./index.js";
 import { resetPendingStickersForTest } from "./tool.js";
@@ -20,8 +20,13 @@ type ToolFactory = (ctx: {
   execute(toolCallId: string, params: unknown): Promise<unknown>;
 } | null;
 
+beforeEach(() => {
+  vi.stubEnv("OPENCLAW_STATE_DIR", "");
+});
+
 afterEach(() => {
   resetPendingStickersForTest();
+  vi.unstubAllEnvs();
 });
 
 function registerTestHandler(pluginConfig?: Record<string, unknown>) {
@@ -157,8 +162,14 @@ describe("plugin entry", () => {
     const tool = toolFactory({ sessionKey: "room-tool", messageChannel: "wecom" });
 
     await expect(tool?.execute("tool-1", { name: "happy", reason: "task_success" })).resolves.toEqual({
-      content: [{ type: "text", text: "Queued sticker: happy" }],
-      details: { queued: true, sticker: "happy", reason: "task_success" },
+      content: [{ type: "text", text: "Queued sticker: happy\nMEDIA: stickers/happy.png" }],
+      details: {
+        queued: true,
+        sticker: "happy",
+        reason: "task_success",
+        mediaLine: "MEDIA: stickers/happy.png",
+        sessionKeys: ["room-tool"],
+      },
     });
     await expect(
       handler({ payload: { text: "搞定了。" }, channel: "wecom", sessionKey: "room-tool" }, { channelId: "wecom", conversationId: "room-tool" }),
@@ -198,6 +209,44 @@ describe("plugin entry", () => {
     await expect(
       handler({ payload: { text: "下一条不重复。" }, channel: "wecom", sessionKey: "room-tool-multi" }, { channelId: "wecom", conversationId: "room-tool-multi" }),
     ).resolves.toBeUndefined();
+  });
+
+  it("matches queued stickers when tool and reply hooks use different session key shapes", async () => {
+    const { handler, toolFactory } = registerTestHandler();
+    const tool = toolFactory({
+      messageChannel: "wecom",
+      deliveryContext: { channel: "wecom", to: "room-route" },
+    });
+
+    await tool?.execute("tool-route", { name: "happy" });
+
+    await expect(
+      handler(
+        { payload: { text: "route key works." }, channel: "wecom", sessionKey: "agent:main:wecom:group:room-route" },
+        { channelId: "wecom", conversationId: "room-route" },
+      ),
+    ).resolves.toEqual({
+      payload: {
+        text: "route key works.",
+        mediaUrl: testStickerPath,
+        mediaUrls: [testStickerPath],
+      },
+    });
+  });
+
+  it("does not block the original reply when sticker asset sync fails", async () => {
+    const { handler, api } = registerTestHandler({
+      autoAppend: { enabled: false },
+      mediaBasePath: "/dev/null/stickers",
+    });
+
+    await expect(
+      handler(
+        { payload: { text: "正文必须继续发送。\nMEDIA: stickers/happy.png" }, channel: "wecom", sessionKey: "room-sync-fail" },
+        { channelId: "wecom", conversationId: "room-sync-fail" },
+      ),
+    ).resolves.toBeUndefined();
+    expect(api.logger.warn).toHaveBeenCalledWith(expect.stringContaining("[claw-sticker] reply payload hook failed; sending original payload:"));
   });
 
   it("can deliver a queued sticker even when the final reply text is empty", async () => {

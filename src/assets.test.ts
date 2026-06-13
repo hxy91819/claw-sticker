@@ -24,6 +24,7 @@ async function makeTempRoot(): Promise<string> {
 
 describe("sticker assets", () => {
   it("infers state/workspace paths from the managed plugin install root", () => {
+    vi.stubEnv("OPENCLAW_STATE_DIR", "");
     expect(resolveOpenClawStateDir("/srv/openclaw/.openclaw/extensions/claw-sticker")).toBe(
       "/srv/openclaw/.openclaw",
     );

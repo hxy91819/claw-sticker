@@ -30,6 +30,22 @@ function getSessionKey(ctx: { sessionKey?: string; channelId?: string; conversat
   return event.sessionKey ?? ctx.sessionKey ?? `${ctx.channelId ?? "unknown"}:${ctx.conversationId ?? event.to ?? "unknown"}`;
 }
 
+function getSessionKeys(ctx: { sessionKey?: string; channelId?: string; conversationId?: string }, event: { sessionKey?: string; to?: string }): string[] {
+  const channel = ctx.channelId ?? "unknown";
+  const conversation = ctx.conversationId ?? event.to;
+  return Array.from(
+    new Set(
+      [
+        event.sessionKey,
+        ctx.sessionKey,
+        conversation ? `${channel}:${conversation}:none` : undefined,
+        conversation ? `${channel}:${conversation}` : undefined,
+        `${channel}:${conversation ?? "unknown"}`,
+      ].filter((key): key is string => Boolean(key?.trim())),
+    ),
+  );
+}
+
 function getState(key: string): AutoAppendState {
   const state = sessionState.get(key) ?? { lastStickerAt: 0, messagesSinceSticker: Number.MAX_SAFE_INTEGER };
   sessionState.set(key, state);
@@ -66,7 +82,7 @@ function renderPendingStickerMediaUrls(pendingStickers: readonly PendingSticker[
 function normalizeStickerReplyPayload(params: {
   payload: ReplyPayloadLike;
   channelId?: string;
-  sessionKey?: string;
+  sessionKey?: string | readonly string[];
   pluginConfig: unknown;
   mediaBasePath?: string;
   logger: OpenClawPluginApi["logger"];
@@ -78,8 +94,13 @@ function normalizeStickerReplyPayload(params: {
   }
 
   const originalText = String(params.payload.text ?? "");
-  const sessionKey = params.sessionKey ?? `${params.channelId ?? "unknown"}:unknown`;
-  const pendingStickers = consumePendingStickers(sessionKey);
+  const sessionKeys = Array.isArray(params.sessionKey)
+    ? params.sessionKey
+    : params.sessionKey
+      ? [params.sessionKey]
+      : [`${params.channelId ?? "unknown"}:unknown`];
+  const sessionKey = sessionKeys[0] ?? `${params.channelId ?? "unknown"}:unknown`;
+  const pendingStickers = consumePendingStickers(sessionKeys);
   if (!originalText.trim() && pendingStickers.length === 0) {
     return {};
   }
@@ -209,19 +230,25 @@ const plugin: ClawStickerPluginEntry = definePluginEntry({
       "reply_payload_sending",
       async (event, ctx) => {
         const mediaBasePath = resolveMediaBasePath();
-        const result = normalizeStickerReplyPayload({
-          payload: event.payload,
-          channelId: event.channel ?? ctx.channelId,
-          sessionKey: getSessionKey(ctx, event),
-          pluginConfig: api.pluginConfig,
-          mediaBasePath,
-          logger: api.logger,
-        });
-        if (
-          resolveConfig(api.pluginConfig).assetSync.enabled &&
-          result.payload?.mediaUrls?.some((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, mediaBasePath))
-        ) {
-          await ensureStickerAssets(mediaBasePath, api.logger);
+        let result: ReturnType<typeof normalizeStickerReplyPayload>;
+        try {
+          result = normalizeStickerReplyPayload({
+            payload: event.payload,
+            channelId: event.channel ?? ctx.channelId,
+            sessionKey: getSessionKeys(ctx, event),
+            pluginConfig: api.pluginConfig,
+            mediaBasePath,
+            logger: api.logger,
+          });
+          if (
+            resolveConfig(api.pluginConfig).assetSync.enabled &&
+            result.payload?.mediaUrls?.some((mediaUrl) => resolveHostedStickerMediaUrl(mediaUrl, mediaBasePath))
+          ) {
+            await ensureStickerAssets(mediaBasePath, api.logger);
+          }
+        } catch (err: unknown) {
+          api.logger.warn(`[claw-sticker] reply payload hook failed; sending original payload: ${err instanceof Error ? err.message : String(err)}`);
+          return undefined;
         }
         return result.payload ? { payload: result.payload } : undefined;
       },
