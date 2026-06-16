@@ -107,15 +107,13 @@ describe("plugin entry", () => {
     });
   });
 
-  it("fixes inline sticker syntax and strips MEDIA text from visible payload", async () => {
+  it("fixes inline sticker syntax and strips MEDIA text without attaching media to text replies by default", async () => {
     const { handler } = registerTestHandler({ autoAppend: { enabled: false } });
     await expect(
       handler({ payload: { text: "搞定了 MEDIA: stickers/happy.png" }, channel: "wecom", sessionKey: "room-inline" }, { channelId: "wecom", conversationId: "room-inline" }),
     ).resolves.toEqual({
       payload: {
         text: "搞定了",
-        mediaUrl: testStickerPath,
-        mediaUrls: [testStickerPath],
       },
     });
   });
@@ -127,19 +125,13 @@ describe("plugin entry", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("auto-appends conservatively when enabled", async () => {
+  it("does not auto-attach media to text replies by default", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       const { handler } = registerTestHandler({ autoAppend: { enabled: true } });
       await expect(
         handler({ payload: { text: "已完成，测试通过了。" }, channel: "wecom", sessionKey: "room-2" }, { channelId: "wecom", conversationId: "room-2" }),
-      ).resolves.toEqual({
-        payload: {
-          text: "已完成，测试通过了。",
-          mediaUrl: testStickerPath,
-          mediaUrls: [testStickerPath],
-        },
-      });
+      ).resolves.toBeUndefined();
     } finally {
       random.mockRestore();
     }
@@ -157,8 +149,8 @@ describe("plugin entry", () => {
     }
   });
 
-  it("queues a sticker through the tool and attaches it during final reply delivery", async () => {
-    const { handler, toolFactory } = registerTestHandler();
+  it("queues a sticker through the tool without blocking non-empty final text", async () => {
+    const { handler, api, toolFactory } = registerTestHandler();
     const tool = toolFactory({ sessionKey: "room-tool", messageChannel: "wecom" });
 
     await expect(tool?.execute("tool-1", { name: "happy", reason: "task_success" })).resolves.toEqual({
@@ -173,6 +165,17 @@ describe("plugin entry", () => {
     });
     await expect(
       handler({ payload: { text: "搞定了。" }, channel: "wecom", sessionKey: "room-tool" }, { channelId: "wecom", conversationId: "room-tool" }),
+    ).resolves.toBeUndefined();
+    expect(api.logger.info).toHaveBeenCalledWith("[claw-sticker] skipped tool sticker media on text reply to avoid delaying final text");
+  });
+
+  it("can attach a queued sticker to text replies when explicitly enabled", async () => {
+    const { handler, toolFactory } = registerTestHandler({ delivery: { attachWithText: true } });
+    const tool = toolFactory({ sessionKey: "room-tool-attach", messageChannel: "wecom" });
+
+    await tool?.execute("tool-1", { name: "happy", reason: "task_success" });
+    await expect(
+      handler({ payload: { text: "搞定了。" }, channel: "wecom", sessionKey: "room-tool-attach" }, { channelId: "wecom", conversationId: "room-tool-attach" }),
     ).resolves.toEqual({
       payload: {
         text: "搞定了。",
@@ -183,7 +186,7 @@ describe("plugin entry", () => {
   });
 
   it("queues multiple stickers through the tool and attaches them to the next reply", async () => {
-    const { handler, toolFactory } = registerTestHandler();
+    const { handler, toolFactory } = registerTestHandler({ delivery: { attachWithText: true } });
     const tool = toolFactory({ sessionKey: "room-tool-multi", messageChannel: "wecom" });
 
     await tool?.execute("tool-1", { name: "happy" });
@@ -222,19 +225,19 @@ describe("plugin entry", () => {
 
     await expect(
       handler(
-        { payload: { text: "route key works." }, channel: "wecom", sessionKey: "agent:main:wecom:group:room-route" },
+        { payload: { text: "" }, channel: "wecom", sessionKey: "agent:main:wecom:group:room-route" },
         { channelId: "wecom", conversationId: "room-route" },
       ),
     ).resolves.toEqual({
       payload: {
-        text: "route key works.",
+        text: undefined,
         mediaUrl: testStickerPath,
         mediaUrls: [testStickerPath],
       },
     });
   });
 
-  it("does not block the original reply when sticker asset sync fails", async () => {
+  it("keeps text replies sendable even when sticker asset sync would fail", async () => {
     const { handler, api } = registerTestHandler({
       autoAppend: { enabled: false },
       mediaBasePath: "/dev/null/stickers",
@@ -244,6 +247,23 @@ describe("plugin entry", () => {
       handler(
         { payload: { text: "正文必须继续发送。\nMEDIA: stickers/happy.png" }, channel: "wecom", sessionKey: "room-sync-fail" },
         { channelId: "wecom", conversationId: "room-sync-fail" },
+      ),
+    ).resolves.toEqual({
+      payload: { text: "正文必须继续发送。" },
+    });
+    expect(api.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("does not block the original reply when sticker-only asset sync fails", async () => {
+    const { handler, api } = registerTestHandler({
+      autoAppend: { enabled: false },
+      mediaBasePath: "/dev/null/stickers",
+    });
+
+    await expect(
+      handler(
+        { payload: { text: "MEDIA: stickers/happy.png" }, channel: "wecom", sessionKey: "room-sync-fail-empty" },
+        { channelId: "wecom", conversationId: "room-sync-fail-empty" },
       ),
     ).resolves.toBeUndefined();
     expect(api.logger.warn).toHaveBeenCalledWith(expect.stringContaining("[claw-sticker] reply payload hook failed; sending original payload:"));

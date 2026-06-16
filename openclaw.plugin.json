@@ -30,6 +30,17 @@
           "enabled": { "type": "boolean", "default": true }
         }
       },
+      "delivery": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attachWithText": {
+            "type": "boolean",
+            "default": false,
+            "description": "Attach sticker media to non-empty text replies. Disabled by default so sticker media cannot delay or block the final text reply."
+          }
+        }
+      },
       "tool": {
         "type": "object",
         "additionalProperties": false,

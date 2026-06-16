@@ -79,6 +79,10 @@ function renderPendingStickerMediaUrls(pendingStickers: readonly PendingSticker[
   return pendingStickers.flatMap((sticker) => splitStickerMediaFromContent(renderSticker(sticker.name)).mediaUrls);
 }
 
+function shouldAttachStickerMedia(visibleText: string, attachWithText: boolean): boolean {
+  return attachWithText || !visibleText.trim();
+}
+
 function normalizeStickerReplyPayload(params: {
   payload: ReplyPayloadLike;
   channelId?: string;
@@ -121,6 +125,16 @@ function normalizeStickerReplyPayload(params: {
   if (split.mediaUrls.length > 0) {
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
+    if (!shouldAttachStickerMedia(split.text, config.delivery.attachWithText)) {
+      params.logger.info("[claw-sticker] skipped sticker media on text reply to avoid delaying final text");
+      return {
+        reason: reason ?? "text_first_skip_media",
+        payload: {
+          ...params.payload,
+          text: split.text || undefined,
+        },
+      };
+    }
     const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, mediaBasePath);
     params.logger.info("[claw-sticker] resolved sticker MEDIA to payload mediaUrls");
     return {
@@ -135,6 +149,12 @@ function normalizeStickerReplyPayload(params: {
   }
 
   if (pendingStickers.length > 0) {
+    if (!shouldAttachStickerMedia(content, config.delivery.attachWithText)) {
+      state.lastStickerAt = Date.now();
+      state.messagesSinceSticker = 0;
+      params.logger.info("[claw-sticker] skipped tool sticker media on text reply to avoid delaying final text");
+      return {};
+    }
     const pendingMediaUrls = renderPendingStickerMediaUrls(pendingStickers);
     const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, pendingMediaUrls, mediaBasePath);
     state.lastStickerAt = Date.now();
@@ -162,6 +182,12 @@ function normalizeStickerReplyPayload(params: {
   if (decision.append) {
     content = appendSticker(content, decision.sticker);
     split = splitStickerMediaFromContent(content);
+    if (!shouldAttachStickerMedia(split.text, config.delivery.attachWithText)) {
+      state.lastStickerAt = Date.now();
+      state.messagesSinceSticker = 0;
+      params.logger.info(`[claw-sticker] skipped auto sticker ${decision.sticker} on text reply to avoid delaying final text`);
+      return {};
+    }
     const mediaUrls = mergeMediaUrls(params.payload.mediaUrls, split.mediaUrls, mediaBasePath);
     state.lastStickerAt = Date.now();
     state.messagesSinceSticker = 0;
